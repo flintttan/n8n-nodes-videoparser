@@ -9,7 +9,66 @@ import {
 import axios from 'axios';
 
 // Import btch-downloader functions
+// The package is CJS with named exports; keep the require() form (project
+// convention) to avoid aliasing every parser to a different function name.
 const btchDownloader = require('btch-downloader');
+
+type XiaohongshuResult = {
+	noteId?: string;
+	title?: string;
+	desc?: string;
+	keywords?: string;
+	duration?: string | number;
+	author?: {
+		id?: string;
+		nickname?: string;
+		avatar?: string;
+		profileUrl?: string;
+	};
+	engagement?: {
+		likes?: number | string;
+		comments?: number | string;
+		collects?: number | string;
+		shares?: number | string;
+	};
+	images?: string[];
+	downloads?: { quality?: string; url?: string }[];
+};
+
+type XiaohongshuProfileResult = {
+	status?: boolean;
+	user?: {
+		id?: string;
+		redId?: string;
+		nickname?: string;
+		avatar?: string;
+		profileUrl?: string;
+		bio?: string;
+		gender?: number;
+		ipLocation?: string;
+		verified?: boolean;
+		verifyType?: number;
+	};
+	stats?: {
+		followers?: number;
+		followings?: number;
+		likes?: number;
+		notes?: number;
+	};
+	notes?: Array<{
+		noteId?: string;
+		title?: string;
+		type?: string;
+		cover?: string;
+		likes?: number;
+	}>;
+	pagination?: {
+		hasMore?: boolean;
+		nextCursor?: string;
+	};
+};
+
+const XIAOHONGSHU_PROFILE_REGEX = /xiaohongshu\.com\/user\/profile\/[\w]+/i;
 
 export class VideoParser implements INodeType {
 	description: INodeTypeDescription = {
@@ -80,6 +139,10 @@ export class VideoParser implements INodeType {
 						name: 'Xiaohongshu',
 						value: 'xiaohongshu',
 					},
+					{
+						name: 'Xiaohongshu 博主主页 (Profile)',
+						value: 'xiaohongshuProfile',
+					},
 				],
 				default: 'auto',
 				description: '选择视频平台（自动检测会根据URL自动识别）',
@@ -127,116 +190,44 @@ export class VideoParser implements INodeType {
 					);
 				}
 
-				// Extract data from btch-downloader response structure
-				const data = videoInfo?.result?.data || videoInfo?.result || videoInfo?.data || videoInfo;
-				const links = data?.links || [];
-				const downloads = data?.downloads || [];
-				const images = data?.images || [];
-
-				// Determine content type and URL
-				let extractedVideoUrl = '';
-				let contentType = 'video';
-
-				if (links.length > 0) {
-					// Standard video platforms (Douyin, TikTok, etc.)
-					extractedVideoUrl = links[0].url;
-				} else if (downloads.length > 0) {
-					// Xiaohongshu video format
-					extractedVideoUrl = downloads[0];
-				} else if (images.length > 0) {
-					// Xiaohongshu image content
-					contentType = 'image';
-					extractedVideoUrl = images[0];
-				}
-
-				// Extract engagement stats (Xiaohongshu format)
-				const engagement = data?.engagement || {};
-				const likes = engagement?.likes || data?.likes || data?.like_count || data?.digg_count || 0;
-				const comments = engagement?.comments || data?.comments || data?.comment_count || 0;
-				const collects = engagement?.collects || data?.collects || 0;
-
-				// Prepare output data
 				const outputData: INodeExecutionData = {
-					json: {
-						platform: platform,
-						contentType: contentType,
-						title: data?.title || data?.nickname || '',
-						author: data?.author || data?.username || data?.nickname || '',
-						videoUrl: contentType === 'video' ? extractedVideoUrl : '',
-						imageUrl: contentType === 'image' ? extractedVideoUrl : '',
-						coverUrl: data?.thumbnail || data?.cover_url || data?.coverUrl || '',
-						duration: data?.duration || 0,
-						description: data?.description || data?.caption || data?.desc || '',
-						keywords: data?.keywords || '',
-						tags: data?.tags || data?.hashtags || [],
-						stats: {
-							likes: typeof likes === 'string' ? parseInt(likes) || 0 : likes,
-							comments: typeof comments === 'string' ? parseInt(comments) || 0 : comments,
-							shares: data?.shares || data?.share_count || 0,
-							views: data?.views || data?.view_count || data?.play_count || 0,
-							collects: typeof collects === 'string' ? parseInt(collects) || 0 : collects,
-						},
-						links: links,
-						downloads: downloads,
-						images: images,
-						rawData: videoInfo,
-					},
+					json: buildOutput(videoInfo, platform, videoUrl),
 				};
 
-				// Download video if requested
-				if (downloadVideo && outputData.json.videoUrl) {
-					try {
-						const videoResponse = await axios.get(outputData.json.videoUrl as string, {
-							responseType: 'arraybuffer',
-							timeout: 60000, // 60 seconds timeout
-						});
-
-						const binaryData = await this.helpers.prepareBinaryData(
-							Buffer.from(videoResponse.data),
-							`video_${Date.now()}.mp4`,
-							'video/mp4',
-						);
-
-						outputData.binary = {
-							data: binaryData,
-						};
-					} catch (error) {
-						const errorMessage = error instanceof Error ? error.message : String(error);
-						throw new NodeOperationError(
-							this.getNode(),
-							`视频下载失败: ${errorMessage}`,
-							{ itemIndex: i },
-						);
-					}
-				} else if (downloadVideo && images.length > 0) {
-					// Download all images for image-based content (e.g., Xiaohongshu)
-					try {
-						const binaryDataObject: { [key: string]: any } = {};
-
-						for (let imgIndex = 0; imgIndex < images.length; imgIndex++) {
-							const imageUrl = images[imgIndex];
-							const imageResponse = await axios.get(imageUrl, {
-								responseType: 'arraybuffer',
-								timeout: 60000,
-							});
-
-							const binaryData = await this.helpers.prepareBinaryData(
-								Buffer.from(imageResponse.data),
-								`image_${imgIndex + 1}.jpg`,
-								'image/jpeg',
+				// Download media (videos or images) when requested
+				if (downloadVideo) {
+					const json = outputData.json as any;
+					if (platform === 'xiaohongshuProfile') {
+						// Profile endpoint doesn't yield downloadable media; nothing to fetch.
+					} else if (json.contentType === 'video' && json.videoUrl) {
+						try {
+							const binaryData = await downloadToBinary(
+								this,
+								json.videoUrl as string,
+								`video_${Date.now()}.mp4`,
+								'video/mp4',
 							);
-
-							binaryDataObject[`image${imgIndex + 1}`] = binaryData;
+							outputData.binary = { data: binaryData };
+						} catch (error) {
+							throw wrapDownloadError(this, i, error, '视频下载失败');
 						}
-
-						outputData.binary = binaryDataObject;
-					} catch (error) {
-						const errorMessage = error instanceof Error ? error.message : String(error);
-						throw new NodeOperationError(
-							this.getNode(),
-							`图片下载失败: ${errorMessage}`,
-							{ itemIndex: i },
-						);
+					} else if (json.contentType === 'image' && Array.isArray(json.images) && json.images.length > 0) {
+						try {
+							const binaryDataObject: { [key: string]: any } = {};
+							for (let imgIndex = 0; imgIndex < json.images.length; imgIndex++) {
+								const imageUrl = json.images[imgIndex];
+								const binaryData = await downloadToBinary(
+									this,
+									imageUrl,
+									`image_${imgIndex + 1}.jpg`,
+									'image/jpeg',
+								);
+								binaryDataObject[`image${imgIndex + 1}`] = binaryData;
+							}
+							outputData.binary = binaryDataObject;
+						} catch (error) {
+							throw wrapDownloadError(this, i, error, '图片下载失败');
+						}
 					}
 				}
 
@@ -263,6 +254,128 @@ export class VideoParser implements INodeType {
 
 }
 
+// Extract the inner payload from a btch-downloader response.
+// Newer versions wrap the data in `result`; some platforms nest it deeper.
+function unwrapPayload(videoInfo: any): any {
+	return videoInfo?.result?.data || videoInfo?.result || videoInfo?.data || videoInfo;
+}
+
+function isXiaohongshuProfileResult(value: any): value is XiaohongshuProfileResult {
+	return (
+		value &&
+		typeof value === 'object' &&
+		(value.user !== undefined || value.stats !== undefined || value.notes !== undefined)
+	);
+}
+
+function buildOutput(videoInfo: any, platform: string, videoUrl: string): Record<string, any> {
+	const payload = unwrapPayload(videoInfo);
+
+	// Xiaohongshu profile endpoint: skip the note-extraction path entirely.
+	if (platform === 'xiaohongshuProfile' || isXiaohongshuProfileResult(payload)) {
+		return {
+			platform: 'xiaohongshuProfile',
+			contentType: 'profile',
+			profileUrl: videoUrl,
+			user: payload?.user || {},
+			stats: payload?.stats || {},
+			notes: payload?.notes || [],
+			pagination: payload?.pagination || {},
+			rawData: videoInfo,
+		};
+	}
+
+	const links = payload?.links || [];
+	const downloads = payload?.downloads || [];
+	const images = payload?.images || [];
+
+	let extractedMediaUrl = '';
+	let contentType = 'video';
+	if (links.length > 0) {
+		// Standard video platforms (Douyin, TikTok, etc.) use `links[].url`.
+		extractedMediaUrl = links[0].url || '';
+	} else if (downloads.length > 0) {
+		// Newer Xiaohongshu responses put video URLs inside `downloads[]`.
+		extractedMediaUrl = downloads[0].url || '';
+	} else if (images.length > 0) {
+		// Xiaohongshu image content.
+		contentType = 'image';
+		extractedMediaUrl = images[0];
+	}
+
+	const engagement = payload?.engagement || {};
+	const toInt = (v: any): number => (typeof v === 'string' ? parseInt(v, 10) || 0 : v || 0);
+
+	// Xiaohongshu 6.0.35 nests the author under `author.nickname`; fall back to
+	// the legacy flat shape so older payloads still render the right name.
+	const authorNickname =
+		(payload as XiaohongshuResult)?.author?.nickname ||
+		(payload as any)?.author ||
+		(payload as any)?.username ||
+		(payload as any)?.nickname ||
+		'';
+
+	return {
+		platform,
+		contentType,
+		title:
+			(payload as XiaohongshuResult)?.title ||
+			(payload as any)?.title ||
+			(payload as any)?.nickname ||
+			'',
+		author: authorNickname,
+		authorId: (payload as XiaohongshuResult)?.author?.id || '',
+		authorAvatar: (payload as XiaohongshuResult)?.author?.avatar || '',
+		authorProfileUrl: (payload as XiaohongshuResult)?.author?.profileUrl || '',
+		noteId: (payload as XiaohongshuResult)?.noteId || '',
+		videoUrl: contentType === 'video' ? extractedMediaUrl : '',
+		imageUrl: contentType === 'image' ? extractedMediaUrl : '',
+		coverUrl: payload?.thumbnail || payload?.cover_url || payload?.coverUrl || '',
+		duration: payload?.duration || 0,
+		description: payload?.description || payload?.caption || payload?.desc || '',
+		keywords: payload?.keywords || '',
+		tags: payload?.tags || payload?.hashtags || [],
+		stats: {
+			likes: toInt(engagement.likes ?? payload?.likes ?? payload?.like_count ?? payload?.digg_count),
+			comments: toInt(engagement.comments ?? payload?.comments ?? payload?.comment_count),
+			shares: toInt(engagement.shares ?? payload?.shares ?? payload?.share_count),
+			views: toInt(payload?.views ?? payload?.view_count ?? payload?.play_count),
+			collects: toInt(engagement.collects ?? payload?.collects),
+		},
+		links,
+		downloads,
+		images,
+		rawData: videoInfo,
+	};
+}
+
+async function downloadToBinary(
+	ctx: IExecuteFunctions,
+	url: string,
+	fileName: string,
+	mimeType: string,
+): Promise<any> {
+	const response = await axios.get(url, {
+		responseType: 'arraybuffer',
+		timeout: 60000,
+	});
+	return await ctx.helpers.prepareBinaryData(
+		Buffer.from(response.data),
+		fileName,
+		mimeType,
+	);
+}
+
+function wrapDownloadError(
+	ctx: IExecuteFunctions,
+	itemIndex: number,
+	error: unknown,
+	prefix: string,
+): NodeOperationError {
+	const errorMessage = error instanceof Error ? error.message : String(error);
+	return new NodeOperationError(ctx.getNode(), `${prefix}: ${errorMessage}`, { itemIndex });
+}
+
 async function detectAndParse(url: string): Promise<any> {
 		// Try to detect platform from URL
 		if (url.includes('douyin.com') || url.includes('iesdouyin.com')) {
@@ -281,6 +394,8 @@ async function detectAndParse(url: string): Promise<any> {
 			return await btchDownloader.bilibili(url);
 		} else if (url.includes('kuaishou.com')) {
 			return await btchDownloader.kuaishou(url);
+		} else if (XIAOHONGSHU_PROFILE_REGEX.test(url)) {
+			return await btchDownloader.xiaohongshuProfile(url);
 		} else if (url.includes('xiaohongshu.com') || url.includes('xhslink.com')) {
 			return await btchDownloader.xiaohongshu(url);
 		}
@@ -299,6 +414,7 @@ async function parseByPlatform(url: string, platform: string): Promise<any> {
 			bilibili: btchDownloader.bilibili,
 			kuaishou: btchDownloader.kuaishou,
 			xiaohongshu: btchDownloader.xiaohongshu,
+			xiaohongshuProfile: btchDownloader.xiaohongshuProfile,
 		};
 
 		const parserFunc = platformMap[platform];

@@ -187,6 +187,7 @@ binary.data: video_1234567890.mp4
 **注意**:
 - 小红书平台需要使用**带参数的完整链接**才能解析成功，直接从分享功能获取的链接或从浏览器地址栏复制的完整链接均可
 - 小红书主要返回图文内容，`contentType` 为 `image`，图片数组在 `images` 字段中
+- 小红书博主主页（`https://www.xiaohongshu.com/user/profile/<id>`）请选择 **Xiaohongshu 博主主页 (Profile)** 平台，输出 `contentType` 为 `profile`，博主信息位于 `user`，粉丝/关注/获赞/笔记数位于 `stats`，近期笔记位于 `notes`
 
 ## 常见问题
 
@@ -296,6 +297,12 @@ npm run format
 - n8n 社区: https://community.n8n.io/
 
 ## 更新日志
+
+### v1.0.2 (2026-06-22)
+
+- 🐛 **修复**: 适配 btch-downloader 6.0.35 小红书返回结构调整，修正作者昵称读取路径（`result.author.nickname`）
+- ✨ **新增**: 小红书博主主页接口（`Xiaohongshu Profile`），自动识别 `xiaohongshu.com/user/profile/...` 链接
+- ⬆️ **升级**: `btch-downloader` 依赖从 `^6.0.25` 升级到 `^6.0.35`
 
 ### v1.0.0 (2026-03-08)
 
