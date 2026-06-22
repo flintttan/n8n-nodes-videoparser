@@ -128,10 +128,6 @@ export class VideoParser implements INodeType {
 						value: 'youtube',
 					},
 					{
-						name: 'Bilibili',
-						value: 'bilibili',
-					},
-					{
 						name: 'Kuaishou',
 						value: 'kuaishou',
 					},
@@ -377,46 +373,57 @@ function wrapDownloadError(
 }
 
 async function detectAndParse(url: string): Promise<any> {
-		// Try to detect platform from URL
-		if (url.includes('douyin.com') || url.includes('iesdouyin.com')) {
-			return await btchDownloader.douyin(url);
-		} else if (url.includes('tiktok.com')) {
-			return await btchDownloader.tiktok(url);
-		} else if (url.includes('instagram.com')) {
-			return await btchDownloader.instagram(url);
-		} else if (url.includes('facebook.com') || url.includes('fb.watch')) {
-			return await btchDownloader.facebook(url);
-		} else if (url.includes('twitter.com') || url.includes('x.com')) {
-			return await btchDownloader.twitter(url);
-		} else if (url.includes('youtube.com') || url.includes('youtu.be')) {
-			return await btchDownloader.youtube(url);
-		} else if (url.includes('bilibili.com')) {
-			return await btchDownloader.bilibili(url);
-		} else if (url.includes('kuaishou.com')) {
-			return await btchDownloader.kuaishou(url);
-		} else if (XIAOHONGSHU_PROFILE_REGEX.test(url)) {
-			return await btchDownloader.xiaohongshuProfile(url);
-		} else if (url.includes('xiaohongshu.com') || url.includes('xhslink.com')) {
-			return await btchDownloader.xiaohongshu(url);
+		// btch-downloader 6.0.35 renamed several parsers:
+		//   tiktok -> ttdl, instagram -> igdl, facebook -> fbdown
+		// and dropped bilibili entirely. Resolve through the unified parser map.
+		const detected = detectPlatformFromUrl(url);
+		if (!detected) {
+			throw new Error('无法识别视频平台，请手动选择平台');
 		}
-
-		throw new Error('无法识别视频平台，请手动选择平台');
+		const parser = platformMap[detected];
+		return await parser(url);
 	}
 
-async function parseByPlatform(url: string, platform: string): Promise<any> {
-		const platformMap: { [key: string]: any } = {
-			douyin: btchDownloader.douyin,
-			tiktok: btchDownloader.tiktok,
-			instagram: btchDownloader.instagram,
-			facebook: btchDownloader.facebook,
-			twitter: btchDownloader.twitter,
-			youtube: btchDownloader.youtube,
-			bilibili: btchDownloader.bilibili,
-			kuaishou: btchDownloader.kuaishou,
-			xiaohongshu: btchDownloader.xiaohongshu,
-			xiaohongshuProfile: btchDownloader.xiaohongshuProfile,
-		};
+// Map a user-facing platform option (the value stored in n8n workflows)
+// to the corresponding parser exported by btch-downloader. The platform
+// value stays stable for backward compatibility; the underlying function
+// name may change between releases.
+const platformMap: { [key: string]: (url: string) => Promise<any> } = {
+		douyin: btchDownloader.douyin,
+		tiktok: btchDownloader.ttdl,
+		instagram: btchDownloader.igdl,
+		facebook: btchDownloader.fbdown,
+		twitter: btchDownloader.twitter,
+		youtube: btchDownloader.youtube,
+		kuaishou: btchDownloader.kuaishou,
+		xiaohongshu: btchDownloader.xiaohongshu,
+		xiaohongshuProfile: btchDownloader.xiaohongshuProfile,
+	};
 
+function detectPlatformFromUrl(url: string): string | null {
+	if (url.includes('douyin.com') || url.includes('iesdouyin.com')) {
+		return 'douyin';
+	} else if (url.includes('tiktok.com')) {
+		return 'tiktok';
+	} else if (url.includes('instagram.com')) {
+		return 'instagram';
+	} else if (url.includes('facebook.com') || url.includes('fb.watch')) {
+		return 'facebook';
+	} else if (url.includes('twitter.com') || url.includes('x.com')) {
+		return 'twitter';
+	} else if (url.includes('youtube.com') || url.includes('youtu.be')) {
+		return 'youtube';
+	} else if (url.includes('kuaishou.com')) {
+		return 'kuaishou';
+	} else if (XIAOHONGSHU_PROFILE_REGEX.test(url)) {
+		return 'xiaohongshuProfile';
+	} else if (url.includes('xiaohongshu.com') || url.includes('xhslink.com')) {
+		return 'xiaohongshu';
+	}
+	return null;
+}
+
+async function parseByPlatform(url: string, platform: string): Promise<any> {
 		const parserFunc = platformMap[platform];
 		if (!parserFunc) {
 			throw new Error(`不支持的平台: ${platform}`);

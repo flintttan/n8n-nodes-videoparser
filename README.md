@@ -6,18 +6,17 @@
 
 ## 功能特性
 
-- ✅ **多平台支持**: 支持 15+ 个视频平台
+- ✅ **多平台支持**: 支持 10+ 个视频平台
   
   - 抖音 (Douyin)
   - TikTok
-  - B站 (Bilibili)
   - 快手 (Kuaishou)
   - 小红书 (Xiaohongshu)
+  - 小红书博主主页
   - Instagram
   - Facebook
   - Twitter/X
   - YouTube
-  - 等等...
 
 - ✅ **自动平台识别**: 自动检测视频链接所属平台
 
@@ -68,7 +67,6 @@ n8n start
 - **示例**:
   - 抖音: `https://v.douyin.com/xxxxx/`
   - TikTok: `https://www.tiktok.com/@username/video/1234567890`
-  - B站: `https://www.bilibili.com/video/BVxxxxxxxxx`
 
 #### 平台
 
@@ -82,9 +80,9 @@ n8n start
   - Facebook
   - Twitter/X
   - YouTube
-  - Bilibili
   - Kuaishou
   - Xiaohongshu
+  - Xiaohongshu 博主主页 (Profile)
 - **说明**: 选择视频所属平台，"自动检测"会根据 URL 自动识别
 
 #### 自动下载视频
@@ -176,7 +174,7 @@ binary.data: video_1234567890.mp4
 | ----------------- | ---- | ------------------------------------------ | ---------------------------- |
 | 抖音 (Douyin)       | ✅    | `https://v.douyin.com/xxxxx/`              | 完全支持，包括分享链接和浏览器链接            |
 | TikTok            | ✅    | `https://www.tiktok.com/@user/video/xxx`   | -                            |
-| B站 (Bilibili)     | ✅    | `https://www.bilibili.com/video/BVxxx`     | -                            |
+| B站 (Bilibili)     | ⚠️    | `https://www.bilibili.com/video/BVxxx`     | btch-downloader 6.0.35 已移除 B 站支持，将报错"不支持的平台"；待上游恢复或引入替代库 |
 | 快手 (Kuaishou)     | ✅    | `https://www.kuaishou.com/short-video/xxx` | -                            |
 | 小红书 (Xiaohongshu) | ✅    | `https://www.xiaohongshu.com/xxx?xsec_...` | 需要使用带参数的完整链接（分享链接或浏览器复制的链接） |
 | Instagram         | ✅    | `https://www.instagram.com/p/xxx/`         | -                            |
@@ -302,6 +300,8 @@ npm run format
 
 - 🐛 **修复**: 适配 btch-downloader 6.0.35 小红书返回结构调整，修正作者昵称读取路径（`result.author.nickname`）
 - ✨ **新增**: 小红书博主主页接口（`Xiaohongshu Profile`），自动识别 `xiaohongshu.com/user/profile/...` 链接
+- 🔁 **重命名映射**: TikTok/Instagram/Facebook 在 6.0.35 内部函数分别改为 `ttdl/igdl/fbdown`，用户选项值保持不变以兼容已有 workflow
+- ⚠️ **移除**: B 站（`btch-downloader` 6.0.35 已删除 bilibili 支持）。平台下拉框暂时移除该选项；如需 B 站请关注上游或使用其它节点
 - ⬆️ **升级**: `btch-downloader` 依赖从 `^6.0.25` 升级到 `^6.0.35`
 
 ### v1.0.0 (2026-03-08)
